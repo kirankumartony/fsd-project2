@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_20", "python3", "gcc", "gnumake"]
 
 [phases.install]
-cmds = ["npm install --include=dev"]
+cmds = ["npm ci --prefer-offline"]
 
 [phases.build]
 cmds = ["npm run build"]
