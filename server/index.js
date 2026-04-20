@@ -5,6 +5,9 @@ import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import path from 'node:path'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { getDb, seedUserData } from './db.js'
 
 dotenv.config()
@@ -12,6 +15,9 @@ dotenv.config()
 const app = express()
 const PORT = Number(process.env.PORT ?? 4000)
 const JWT_SECRET = process.env.JWT_SECRET ?? 'development-secret-change-me'
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const distPath = path.resolve(__dirname, '../dist')
 
 app.use(helmet())
 app.use(cors())
@@ -369,6 +375,19 @@ app.delete('/api/bills/paid', authenticate, async (req, res) => {
 
   res.json({ bills })
 })
+
+if (existsSync(distPath)) {
+  app.use(express.static(distPath))
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      next()
+      return
+    }
+
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
+}
 
 app.listen(PORT, async () => {
   await getDb()

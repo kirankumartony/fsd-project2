@@ -47,12 +47,12 @@ This project is a full-stack personal finance manager with a React + TypeScript 
    npm run build
    ```
 
-## Deploy Backend On Render
+## Deploy Full App On Railway (No Vercel Needed)
 
-1. Create a new Web Service from this repository.
-2. Render should use:
+1. Create a new Railway project from this repository.
+2. Railway reads `railway.json` and uses:
 
-   - Build Command: `npm install`
+   - Build Command: `npm install --include=dev && npm run build`
    - Start Command: `npm start`
    - Health Check Path: `/api/health`
 
@@ -60,13 +60,15 @@ This project is a full-stack personal finance manager with a React + TypeScript 
 
    - `JWT_SECRET` = any strong random string
 
-4. Deploy and copy your backend URL.
+4. Deploy and open the Railway URL.
+5. Verify:
 
-## Deploy Frontend On Vercel
+   - App UI loads at `/`
+   - API health returns JSON at `/api/health`
 
-1. Keep frontend build settings as Vite defaults.
-2. In `vercel.json`, replace `YOUR-RENDER-BACKEND-URL` with your actual Render backend domain.
-3. Redeploy on Vercel.
+## Optional Split Deployment (Render + Vercel)
+
+If you prefer separate services, keep using `vercel.json` rewrite for `/api`.
 
 ## Project Structure
 
