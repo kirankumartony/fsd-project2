@@ -66,6 +66,14 @@ This project is a full-stack personal finance manager with a React + TypeScript 
    - App UI loads at `/`
    - API health returns JSON at `/api/health`
 
+### If Railway Build Fails
+
+This repo is pinned to Node 20 and includes `nixpacks.toml` for native module build tools.
+
+1. Open Railway service settings and redeploy latest commit.
+2. Confirm build logs show Node 20.
+3. If needed, add variable `NIXPACKS_NODE_VERSION=20` and redeploy.
+
 ## Optional Split Deployment (Render + Vercel)
 
 If you prefer separate services, keep using `vercel.json` rewrite for `/api`.
