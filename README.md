@@ -47,6 +47,27 @@ This project is a full-stack personal finance manager with a React + TypeScript 
    npm run build
    ```
 
+## Deploy Backend On Render
+
+1. Create a new Web Service from this repository.
+2. Render should use:
+
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+   - Health Check Path: `/api/health`
+
+3. Add environment variable:
+
+   - `JWT_SECRET` = any strong random string
+
+4. Deploy and copy your backend URL.
+
+## Deploy Frontend On Vercel
+
+1. Keep frontend build settings as Vite defaults.
+2. In `vercel.json`, replace `YOUR-RENDER-BACKEND-URL` with your actual Render backend domain.
+3. Redeploy on Vercel.
+
 ## Project Structure
 
 - `src/App.tsx` contains UI logic and API integration.

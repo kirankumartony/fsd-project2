@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: fsd-project2-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
