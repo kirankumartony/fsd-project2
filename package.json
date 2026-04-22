@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:client": "vite",
+    "dev:client": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "dev:server": "node --watch server/index.js",
     "dev:full": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "start": "node server/index.js",
