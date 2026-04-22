@@ -38,6 +38,22 @@ type User = {
   email: string
 }
 
+type SalaryPlanRecord = {
+  id: number
+  monthKey: string
+  salary: number
+  spent: number
+  remaining: number
+  investmentStyle: InvestmentStyle
+  emergency: number
+  indexFund: number
+  debtFund: number
+  liquid: number
+  createdAt: string
+}
+
+type InvestmentStyle = 'conservative' | 'balanced' | 'growth'
+
 type UndoAction =
   | { kind: 'transaction'; transaction: Transaction; message: string }
   | { kind: 'bill'; bill: Bill; message: string }
@@ -73,32 +89,100 @@ const initialBills: Bill[] = [
 
 const rowsPerPage = 5
 
+const investmentPresets: Record<
+  InvestmentStyle,
+  {
+    label: string
+    note: string
+    split: {
+      emergency: number
+      indexFund: number
+      debtFund: number
+      liquid: number
+    }
+  }
+> = {
+  conservative: {
+    label: 'Conservative',
+    note: 'Higher safety with a stronger emergency and debt allocation.',
+    split: { emergency: 40, indexFund: 25, debtFund: 25, liquid: 10 },
+  },
+  balanced: {
+    label: 'Balanced',
+    note: 'Mix of long-term growth and capital protection.',
+    split: { emergency: 30, indexFund: 45, debtFund: 15, liquid: 10 },
+  },
+  growth: {
+    label: 'Growth',
+    note: 'Prioritizes long-term market investing for higher potential return.',
+    split: { emergency: 20, indexFund: 60, debtFund: 10, liquid: 10 },
+  },
+}
+
 const currency = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',
   maximumFractionDigits: 0,
 })
 
+const monthIndexByLabel: Record<string, number> = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
+}
+
 function formatMoney(amount: number) {
   return currency.format(amount)
 }
 
-function getMonthKeyFromDate(dateValue: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-    return dateValue.slice(0, 7)
+function normalizeDateToIso(dateValue: string) {
+  const value = String(dateValue ?? '').trim()
+  if (!value) {
+    return ''
   }
 
-  if (/^\d{4}-\d{2}$/.test(dateValue)) {
-    return dateValue
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value
   }
 
-  const fallbackYear = new Date().getFullYear()
-  const parsed = new Date(`${dateValue}, ${fallbackYear}`)
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    return `${value}-01`
+  }
+
+  const shortMonthMatch = /^([A-Za-z]{3})\s+(\d{1,2})$/.exec(value)
+  if (shortMonthMatch) {
+    const month = monthIndexByLabel[shortMonthMatch[1].toLowerCase()]
+    const day = Number(shortMonthMatch[2])
+    if (month !== undefined && day >= 1 && day <= 31) {
+      const year = new Date().getFullYear()
+      return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+  }
+
+  const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) {
     return ''
   }
 
-  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
+}
+
+function getMonthKeyFromDate(dateValue: string) {
+  const normalized = normalizeDateToIso(dateValue)
+  if (!normalized) {
+    return ''
+  }
+
+  return normalized.slice(0, 7)
 }
 
 function formatMonthLabel(monthKey: string) {
@@ -151,17 +235,18 @@ function getPreviousMonthKey(monthKey: string) {
 }
 
 function exportTransactionsCsv(records: Transaction[]) {
-  const header = ['Date', 'Merchant', 'Category', 'Type', 'Amount']
+  const header = ['Date', 'Month', 'Merchant', 'Category', 'Type', 'Amount']
   const rows = records.map((transaction) => [
-    transaction.date,
+    normalizeDateToIso(transaction.date) || transaction.date || 'N/A',
+    getMonthKeyFromDate(transaction.date) || 'N/A',
     transaction.merchant,
     transaction.category,
     transaction.type,
-    transaction.amount.toString(),
+    Math.round(transaction.amount).toString(),
   ])
 
   const csv = [header, ...rows]
-    .map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(','))
+    .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
     .join('\n')
 
   const file = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -177,6 +262,7 @@ function exportTransactionsCsv(records: Transaction[]) {
 function App() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
+  const [monthFilter, setMonthFilter] = useState('all')
   const [sort, setSort] = useState<'newest' | 'amount-desc' | 'amount-asc'>('newest')
   const [page, setPage] = useState(1)
 
@@ -195,6 +281,25 @@ function App() {
   const [monthlyExpenseAmount, setMonthlyExpenseAmount] = useState('')
   const [summaryMonth, setSummaryMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [comparisonMonth, setComparisonMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [salaryPlanMonth, setSalaryPlanMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [salaryAmount, setSalaryAmount] = useState('')
+  const [spentAmount, setSpentAmount] = useState('')
+  const [monthlySavedAmount, setMonthlySavedAmount] = useState('')
+  const [investmentStyle, setInvestmentStyle] = useState<InvestmentStyle>('balanced')
+  const [salaryPlans, setSalaryPlans] = useState<SalaryPlanRecord[]>([])
+  const [salaryPlanMessage, setSalaryPlanMessage] = useState('')
+  const [sipMonthlyAmount, setSipMonthlyAmount] = useState('')
+  const [sipYears, setSipYears] = useState('1')
+  const [potName, setPotName] = useState('')
+  const [potGoal, setPotGoal] = useState('')
+  const [potSaved, setPotSaved] = useState('')
+  const [potCadence, setPotCadence] = useState('Monthly auto-transfer')
+  const [editingPotName, setEditingPotName] = useState('')
+  const [editPotName, setEditPotName] = useState('')
+  const [editPotGoal, setEditPotGoal] = useState('')
+  const [editPotSaved, setEditPotSaved] = useState('')
+  const [editPotCadence, setEditPotCadence] = useState('')
+  const [potMessage, setPotMessage] = useState('')
   const [billName, setBillName] = useState('')
   const [billDueDate, setBillDueDate] = useState('')
   const [billAmount, setBillAmount] = useState('')
@@ -208,7 +313,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authMessage, setAuthMessage] = useState('')
-  const [apiConnected, setApiConnected] = useState(false)
+  const [, setApiConnected] = useState(false)
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null)
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -225,18 +330,31 @@ function App() {
     [transactions],
   )
 
+  const expenseMonths = useMemo(() => {
+    const uniqueMonths = new Set(
+      transactions
+        .filter((transaction) => transaction.type === 'Expense')
+        .map((transaction) => getMonthKeyFromDate(transaction.date))
+        .filter(Boolean),
+    )
+
+    return [...uniqueMonths].sort((left, right) => right.localeCompare(left))
+  }, [transactions])
+
   const filteredTransactions = useMemo(() => {
     const query = search.trim().toLowerCase()
 
     return transactions
       .filter((transaction) => {
+        const transactionMonth = getMonthKeyFromDate(transaction.date)
         const matchesCategory = category === 'All' || transaction.category === category
+        const matchesMonth = monthFilter === 'all' || (transaction.type === 'Expense' && transactionMonth === monthFilter)
         const matchesSearch =
           !query ||
           transaction.merchant.toLowerCase().includes(query) ||
           transaction.category.toLowerCase().includes(query)
 
-        return matchesCategory && matchesSearch
+        return matchesCategory && matchesMonth && matchesSearch
       })
       .sort((left, right) => {
         if (sort === 'amount-desc') return Math.abs(right.amount) - Math.abs(left.amount)
@@ -244,7 +362,7 @@ function App() {
 
         return right.id - left.id
       })
-  }, [category, search, sort, transactions])
+  }, [category, monthFilter, search, sort, transactions])
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / rowsPerPage))
   const currentPage = Math.min(page, totalPages)
@@ -261,18 +379,11 @@ function App() {
       .reduce((sum, transaction) => sum + transaction.amount, 0),
   )
   const netCashFlow = totalIncome - totalExpense
-  const savingsRate = Math.round(
-    (pots.reduce((sum, pot) => sum + pot.saved, 0) / pots.reduce((sum, pot) => sum + pot.goal, 0)) * 100,
-  )
   const budgetPressure = Math.round(
     (budgets.reduce((sum, budget) => sum + budget.spent, 0) /
       Math.max(1, budgets.reduce((sum, budget) => sum + budget.limit, 0))) *
       100,
   )
-  const budgetAlerts = budgets.filter((budget) => budget.spent / budget.limit >= 0.8)
-  const topSpendingBudget =
-    [...budgets].sort((left, right) => right.spent - left.spent)[0] ??
-    ({ category: 'N/A', spent: 0, limit: 1, note: '' } as Budget)
   const monthlyExpenseTotal = useMemo(
     () =>
       transactions
@@ -306,6 +417,58 @@ function App() {
   const comparisonPercent = comparisonPreviousTotal
     ? Math.round((comparisonDelta / comparisonPreviousTotal) * 100)
     : null
+  const salaryMonthIncomeTotal = useMemo(
+    () =>
+      transactions
+        .filter(
+          (transaction) => transaction.type === 'Income' && getMonthKeyFromDate(transaction.date) === salaryPlanMonth,
+        )
+        .reduce((sum, transaction) => sum + transaction.amount, 0),
+    [salaryPlanMonth, transactions],
+  )
+  const salaryMonthExpenseTotal = useMemo(
+    () =>
+      transactions
+        .filter(
+          (transaction) => transaction.type === 'Expense' && getMonthKeyFromDate(transaction.date) === salaryPlanMonth,
+        )
+        .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
+    [salaryPlanMonth, transactions],
+  )
+  const salaryMonthRemaining = salaryMonthIncomeTotal - salaryMonthExpenseTotal
+  const salaryValue = Math.max(0, Number(salaryAmount) || 0)
+  const spentValue = Math.max(0, Number(spentAmount) || 0)
+  const savedThisMonthValue = Math.max(0, Number(monthlySavedAmount) || 0)
+  const remainingSalary = Math.max(0, salaryValue - spentValue)
+  const remainingAfterGoals = remainingSalary - savedThisMonthValue
+  const overspentAmount = spentValue > salaryValue ? spentValue - salaryValue : 0
+  const sipMonthlyValue = Math.max(0, Number(sipMonthlyAmount) || 0)
+  const sipYearsValue = Math.max(0, Number(sipYears) || 0)
+  const sipMonths = Math.round(sipYearsValue * 12)
+  const sipRatePerMonth = 0.12 / 12
+  const sipInvestedAmount = sipMonthlyValue * sipMonths
+  const sipEstimatedMaturity =
+    sipMonthlyValue > 0 && sipMonths > 0
+      ? sipRatePerMonth > 0
+        ? sipMonthlyValue * (((1 + sipRatePerMonth) ** sipMonths - 1) / sipRatePerMonth) * (1 + sipRatePerMonth)
+        : sipInvestedAmount
+      : 0
+  const sipEstimatedGain = Math.max(0, sipEstimatedMaturity - sipInvestedAmount)
+  const salarySplit = useMemo(() => {
+    const split = investmentPresets[investmentStyle].split
+    const emergency = Math.round((remainingSalary * split.emergency) / 100)
+    const indexFund = Math.round((remainingSalary * split.indexFund) / 100)
+    const debtFund = Math.round((remainingSalary * split.debtFund) / 100)
+    const liquid = Math.round((remainingSalary * split.liquid) / 100)
+    const assigned = emergency + indexFund + debtFund + liquid
+
+    return {
+      emergency,
+      indexFund,
+      debtFund,
+      liquid: liquid + (remainingSalary - assigned),
+    }
+  }, [investmentStyle, remainingSalary])
   const dueBillNotifications = useMemo(() => {
     const today = new Date()
 
@@ -366,6 +529,52 @@ function App() {
     setNotificationPermission(permission)
   }
 
+  const useCurrentDashboardTotals = () => {
+    setSalaryAmount(String(Math.max(0, Math.round(salaryMonthIncomeTotal))))
+    setSpentAmount(String(Math.max(0, Math.round(salaryMonthExpenseTotal))))
+    setSalaryPlanMessage(`Used tracked totals for ${formatMonthLabel(salaryPlanMonth)}.`)
+  }
+
+  const saveSalaryPlan = async () => {
+    if (!/^\d{4}-\d{2}$/.test(salaryPlanMonth)) {
+      setSalaryPlanMessage('Select a valid month before saving.')
+      return
+    }
+
+    if (salaryValue <= 0) {
+      setSalaryPlanMessage('Enter a salary amount greater than zero.')
+      return
+    }
+
+    if (overspentAmount > 0) {
+      setSalaryPlanMessage('You are overspent. Adjust spending before saving an investment plan.')
+      return
+    }
+
+    try {
+      const data = await apiRequest(
+        '/api/salary-plans',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            monthKey: salaryPlanMonth,
+            salary: salaryValue,
+            spent: spentValue,
+            investmentStyle,
+          }),
+        },
+        token,
+      )
+
+      setSalaryPlans(data.salaryPlans ?? salaryPlans)
+      setSalaryPlanMessage(`Saved plan for ${formatMonthLabel(salaryPlanMonth)}.`)
+      setApiConnected(true)
+    } catch (error) {
+      setApiConnected(false)
+      setSalaryPlanMessage(error instanceof Error ? error.message : 'Unable to save salary plan right now.')
+    }
+  }
+
   useEffect(() => {
     let mounted = true
 
@@ -387,6 +596,7 @@ function App() {
         setBudgets(data.budgets ?? initialBudgets)
         setPots(data.pots ?? initialPots)
         setBills(data.bills ?? initialBills)
+        setSalaryPlans(data.salaryPlans ?? [])
         setApiConnected(true)
       } catch {
         if (mounted) {
@@ -455,6 +665,7 @@ function App() {
       setBudgets(data.budgets ?? initialBudgets)
       setPots(data.pots ?? initialPots)
       setBills(data.bills ?? initialBills)
+      setSalaryPlans(data.salaryPlans ?? [])
       setApiConnected(true)
       setPassword('')
       setAuthMessage('Authenticated successfully.')
@@ -473,6 +684,8 @@ function App() {
     setBudgets(initialBudgets)
     setPots(initialPots)
     setBills(initialBills)
+    setSalaryPlans([])
+    setSalaryPlanMessage('')
     setAuthMessage('Logged out.')
   }
 
@@ -587,6 +800,131 @@ function App() {
     }
 
     setPots((currentPots) => currentPots.filter((pot) => pot.name !== potName))
+  }
+
+  const addPot = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const nameValue = potName.trim()
+    const goalValue = Number(potGoal)
+    const savedValue = Number(potSaved || '0')
+    const cadenceValue = potCadence.trim() || 'Monthly auto-transfer'
+
+    if (!nameValue || !Number.isFinite(goalValue) || goalValue <= 0 || !Number.isFinite(savedValue) || savedValue < 0) {
+      setPotMessage('Enter a valid pot name, goal amount, and optional saved amount.')
+      return
+    }
+
+    const newPot: Pot = {
+      name: nameValue,
+      goal: goalValue,
+      saved: Math.min(savedValue, goalValue),
+      cadence: cadenceValue,
+    }
+
+    if (pots.some((pot) => pot.name.toLowerCase() === nameValue.toLowerCase())) {
+      setPotMessage('A pot with this name already exists.')
+      return
+    }
+
+    try {
+      const data = await apiRequest(
+        '/api/pots',
+        {
+          method: 'POST',
+          body: JSON.stringify(newPot),
+        },
+        token,
+      )
+
+      setPots(data.pots ?? [newPot, ...pots])
+      setApiConnected(true)
+      setPotMessage(`Saving pot "${nameValue}" added.`)
+    } catch (error) {
+      setApiConnected(false)
+      setPots((currentPots) => [newPot, ...currentPots])
+      setPotMessage(error instanceof Error ? error.message : 'Unable to add saving pot right now.')
+    }
+
+    setPotName('')
+    setPotGoal('')
+    setPotSaved('')
+    setPotCadence('Monthly auto-transfer')
+  }
+
+  const startEditPot = (pot: Pot) => {
+    setEditingPotName(pot.name)
+    setEditPotName(pot.name)
+    setEditPotGoal(String(Math.round(pot.goal)))
+    setEditPotSaved(String(Math.round(pot.saved)))
+    setEditPotCadence(pot.cadence)
+    setPotMessage('')
+  }
+
+  const cancelEditPot = () => {
+    setEditingPotName('')
+    setEditPotName('')
+    setEditPotGoal('')
+    setEditPotSaved('')
+    setEditPotCadence('')
+  }
+
+  const saveEditedPot = async (originalName: string) => {
+    const nameValue = editPotName.trim()
+    const goalValue = Number(editPotGoal)
+    const savedValue = Number(editPotSaved)
+    const cadenceValue = editPotCadence.trim() || 'Monthly auto-transfer'
+
+    if (!nameValue || !Number.isFinite(goalValue) || goalValue <= 0 || !Number.isFinite(savedValue) || savedValue < 0) {
+      setPotMessage('Enter valid values before saving the pot.')
+      return
+    }
+
+    if (
+      nameValue.toLowerCase() !== originalName.toLowerCase() &&
+      pots.some((pot) => pot.name.toLowerCase() === nameValue.toLowerCase())
+    ) {
+      setPotMessage('A pot with this name already exists.')
+      return
+    }
+
+    const updatedPot: Pot = {
+      name: nameValue,
+      goal: goalValue,
+      saved: Math.min(savedValue, goalValue),
+      cadence: cadenceValue,
+    }
+
+    try {
+      const data = await apiRequest(
+        `/api/pots/${encodeURIComponent(originalName)}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            newName: updatedPot.name,
+            goal: updatedPot.goal,
+            saved: updatedPot.saved,
+            cadence: updatedPot.cadence,
+          }),
+        },
+        token,
+      )
+
+      setPots(data.pots ?? pots)
+      setApiConnected(true)
+      setPotMessage(`Saving pot "${updatedPot.name}" updated.`)
+      cancelEditPot()
+      return
+    } catch (error) {
+      setApiConnected(false)
+      setPotMessage(error instanceof Error ? error.message : 'Unable to update saving pot right now.')
+    }
+
+    setPots((currentPots) =>
+      currentPots.map((pot) => (pot.name === originalName ? updatedPot : pot)),
+    )
+    setPotMessage(`Saving pot "${updatedPot.name}" updated in offline mode.`)
+    cancelEditPot()
   }
 
   const addBill = async (event: FormEvent<HTMLFormElement>) => {
@@ -961,7 +1299,7 @@ function App() {
             <a href="#notifications" className="feature-link">Notifications</a>
             <a href="#transactions" className="feature-link">Transactions</a>
             <a href="#pots" className="feature-link">Saving pots</a>
-            <a href="#insights" className="feature-link">Insights</a>
+            <a href="#salary-plan" className="feature-link">Salary plan</a>
             <a href="#bills" className="feature-link">Recurring bills</a>
             <a href="#profile" className="feature-link">Profile</a>
           </nav>
@@ -972,7 +1310,6 @@ function App() {
             <div className="hero-copy">
               <p className="eyebrow">Personal finance manager</p>
               <h1 id="hero-title">Track spending, budgets, pots, and bills in one sharp dashboard.</h1>
-              <p className="text-link">Backend: {apiConnected ? 'Connected (Express API)' : 'Offline fallback mode'}</p>
 
               <div className="auth-card">
                 <div className="auth-row">
@@ -1166,6 +1503,16 @@ function App() {
                 </label>
 
                 <label>
+                  <span>Spent month</span>
+                  <select value={monthFilter} onChange={(event) => { setMonthFilter(event.target.value); setPage(1) }}>
+                    <option value="all">All months</option>
+                    {expenseMonths.map((month) => (
+                      <option key={month} value={month}>{formatMonthLabel(month)}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
                   <span>Sort</span>
                   <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
                     <option value="newest">Newest first</option>
@@ -1220,9 +1567,39 @@ function App() {
             <article className="section-card">
               <p className="section-kicker">Saving pots</p>
               <h2 id="pots-title">Deposit and withdraw against goals</h2>
+              <form className="expense-form" onSubmit={addPot} aria-label="Add saving pot form">
+                <div className="expense-form-head">
+                  <div>
+                    <p className="section-kicker">Add saving pot</p>
+                    <h3>Create a new savings goal</h3>
+                  </div>
+                  <span className="text-link">Set a goal, optional current savings, and transfer cadence.</span>
+                </div>
+                <div className="expense-grid">
+                  <label>
+                    <span>Pot name</span>
+                    <input type="text" value={potName} onChange={(event) => setPotName(event.target.value)} placeholder="Car fund" />
+                  </label>
+                  <label>
+                    <span>Goal amount</span>
+                    <input type="number" min="1" step="1" value={potGoal} onChange={(event) => setPotGoal(event.target.value)} placeholder="250000" />
+                  </label>
+                  <label>
+                    <span>Already saved</span>
+                    <input type="number" min="0" step="1" value={potSaved} onChange={(event) => setPotSaved(event.target.value)} placeholder="25000" />
+                  </label>
+                  <label>
+                    <span>Cadence</span>
+                    <input type="text" value={potCadence} onChange={(event) => setPotCadence(event.target.value)} placeholder="Monthly auto-transfer" />
+                  </label>
+                </div>
+                <button type="submit" className="button button-primary add-expense-button">Add saving pot</button>
+                {potMessage && <span className="auth-message">{potMessage}</span>}
+              </form>
               <div className="progress-list">
                 {pots.map((pot, index) => {
                   const progress = Math.round((pot.saved / pot.goal) * 100)
+                  const isEditing = editingPotName === pot.name
                   return (
                     <div className="progress-item" key={pot.name}>
                       <div className="progress-labels">
@@ -1232,9 +1609,37 @@ function App() {
                       <div className="progress-track progress-track-alt" aria-hidden="true">
                         <div className="progress-fill progress-fill-alt" style={{ width: `${progress}%` }} />
                       </div>
+                      {isEditing && (
+                        <div className="pot-edit-grid" aria-label={`Edit ${pot.name} saving pot`}>
+                          <label>
+                            <span>Name</span>
+                            <input type="text" value={editPotName} onChange={(event) => setEditPotName(event.target.value)} />
+                          </label>
+                          <label>
+                            <span>Goal</span>
+                            <input type="number" min="1" step="1" value={editPotGoal} onChange={(event) => setEditPotGoal(event.target.value)} />
+                          </label>
+                          <label>
+                            <span>Saved</span>
+                            <input type="number" min="0" step="1" value={editPotSaved} onChange={(event) => setEditPotSaved(event.target.value)} />
+                          </label>
+                          <label>
+                            <span>Cadence</span>
+                            <input type="text" value={editPotCadence} onChange={(event) => setEditPotCadence(event.target.value)} />
+                          </label>
+                        </div>
+                      )}
                       <div className="pot-actions">
                         <button type="button" className="button button-secondary" onClick={() => movePot(index, 1)}>Add money</button>
                         <button type="button" className="button button-secondary" onClick={() => movePot(index, -1)}>Withdraw</button>
+                        {isEditing ? (
+                          <>
+                            <button type="button" className="button button-primary" onClick={() => saveEditedPot(pot.name)}>Save</button>
+                            <button type="button" className="button button-secondary" onClick={cancelEditPot}>Cancel</button>
+                          </>
+                        ) : (
+                          <button type="button" className="button button-secondary" onClick={() => startEditPot(pot)}>Edit</button>
+                        )}
                         <button type="button" className="button button-secondary table-action-button" onClick={() => removePot(pot.name)}>Remove</button>
                       </div>
                       <span className="progress-pct">{progress}% to goal · {pot.cadence}</span>
@@ -1245,68 +1650,222 @@ function App() {
             </article>
           </section>
 
-          <section id="insights" className="content-grid" aria-labelledby="insights-title">
-            <article className="section-card">
-              <p className="section-kicker">Insights</p>
-              <h2 id="insights-title">Alerts and suggestions</h2>
-              <div className="insight-grid">
-                <div className="insight-card">
-                  <span>Budget pressure</span>
-                  <strong>{budgetPressure}%</strong>
-                  <p>{budgetAlerts.length ? `${budgetAlerts.length} categories are at or above 80% of their limit.` : 'No budgets are near their limit.'}</p>
-                </div>
-                <div className="insight-card">
-                  <span>Savings rate</span>
-                  <strong>{savingsRate}%</strong>
-                  <p>Steady pot transfers keep this number moving in the right direction.</p>
-                </div>
-                <div className="insight-card">
-                  <span>Top category</span>
-                  <strong>{topSpendingBudget.category}</strong>
-                  <p>{formatMoney(topSpendingBudget.spent)} spent against {formatMoney(topSpendingBudget.limit)}.</p>
-                </div>
-              </div>
+          <section id="salary-plan" className="table-section" aria-labelledby="salary-plan-title">
+            <div className="salary-plan-layout">
+              <article className="section-card salary-plan-card salary-plan-calculation">
+                <p className="section-kicker">Salary planner</p>
+                <h2 id="salary-plan-title">Calculate remaining salary and auto-suggest investments</h2>
+                <p className="text-link">Enter your salary and spending for the month, then choose a style to get an instant investment split.</p>
 
-              <div className="alert-panel" aria-label="Budget alerts">
-                <h3>Budget alerts</h3>
-                {budgetAlerts.length === 0 ? (
-                  <p className="text-link">No categories crossed 80% this month.</p>
-                ) : (
-                  <div className="alert-list">
-                    {budgetAlerts.map((budget) => {
-                      const usage = Math.round((budget.spent / budget.limit) * 100)
-                      const level = usage >= 100 ? 'Critical' : usage >= 90 ? 'High' : 'Watch'
-                      return (
-                        <div className="alert-item" key={budget.category}>
-                          <strong>{budget.category}</strong>
-                          <span className="status-chip">{usage}% used</span>
-                          <span className="status-chip">{level}</span>
-                        </div>
-                      )
-                    })}
+                <div className="salary-plan-controls">
+                  <label>
+                    <span>Plan month</span>
+                    <input
+                      type="month"
+                      value={salaryPlanMonth}
+                      onChange={(event) => setSalaryPlanMonth(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Total salary this month</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={salaryAmount}
+                      onChange={(event) => setSalaryAmount(event.target.value)}
+                      placeholder="80000"
+                    />
+                  </label>
+                  <label>
+                    <span>Total spent this month</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={spentAmount}
+                      onChange={(event) => setSpentAmount(event.target.value)}
+                      placeholder="50000"
+                    />
+                  </label>
+                  <label>
+                    <span>Saved this month for goals</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={monthlySavedAmount}
+                      onChange={(event) => setMonthlySavedAmount(event.target.value)}
+                      placeholder="2500"
+                    />
+                  </label>
+                  <label>
+                    <span>Investment style</span>
+                    <select
+                      value={investmentStyle}
+                      onChange={(event) => setInvestmentStyle(event.target.value as InvestmentStyle)}
+                    >
+                      {Object.entries(investmentPresets).map(([key, preset]) => (
+                        <option key={key} value={key}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="salary-plan-actions">
+                  <button type="button" className="button button-secondary" onClick={useCurrentDashboardTotals}>
+                    Use selected month totals
+                  </button>
+                  <button type="button" className="button button-primary" onClick={saveSalaryPlan}>
+                    Save this plan
+                  </button>
+                </div>
+
+                <div className="salary-plan-note">
+                  <p>
+                    Tracked for {formatMonthLabel(salaryPlanMonth)}: Income {formatMoney(salaryMonthIncomeTotal)} · Expenses {formatMoney(salaryMonthExpenseTotal)} · Remaining {formatMoney(salaryMonthRemaining)}
+                  </p>
+                  <p>
+                    Saved this month: {formatMoney(savedThisMonthValue)} · Remaining after goals: {formatMoney(remainingAfterGoals)}
+                  </p>
+                </div>
+                {salaryPlanMessage && <span className="auth-message">{salaryPlanMessage}</span>}
+
+                <div className="salary-summary-grid" aria-label="Salary summary">
+                  <div>
+                    <dt>Total salary</dt>
+                    <dd>{formatMoney(salaryValue)}</dd>
                   </div>
-                )}
-              </div>
-            </article>
+                  <div>
+                    <dt>Total spent</dt>
+                    <dd>{formatMoney(spentValue)}</dd>
+                  </div>
+                  <div>
+                    <dt>Remaining amount</dt>
+                    <dd>{formatMoney(remainingSalary)}</dd>
+                  </div>
+                  <div>
+                    <dt>Saved this month</dt>
+                    <dd>{formatMoney(savedThisMonthValue)}</dd>
+                  </div>
+                  <div>
+                    <dt>Remaining after goals</dt>
+                    <dd className={remainingAfterGoals < 0 ? 'money-negative' : remainingAfterGoals > 0 ? 'money-positive' : ''}>
+                      {formatMoney(remainingAfterGoals)}
+                    </dd>
+                  </div>
+                </div>
 
-            <article className="section-card">
-              <p className="section-kicker">Suggestions</p>
-              <h2>Recommended next actions</h2>
-              <div className="suggestion-list">
-                <div className="suggestion-item">
-                  <strong>Trim the highest budget first</strong>
-                  <p>{topSpendingBudget.category} is the largest category right now, so it is the best place to recover headroom.</p>
+                {overspentAmount > 0 ? (
+                  <p className="auth-message">You are overspent by {formatMoney(overspentAmount)}. Reduce expenses first, then restart this investment plan.</p>
+                ) : null}
+              </article>
+
+              <article className="section-card salary-plan-card salary-plan-recommendations">
+                <p className="section-kicker">Plan breakdown</p>
+                <h3>Investment suggestions</h3>
+                <p className="text-link">{investmentPresets[investmentStyle].note}</p>
+
+                <div className="salary-split-grid" aria-label="Investment split suggestions">
+                  <div className="insight-card">
+                    <span>Emergency fund</span>
+                    <strong>{formatMoney(salarySplit.emergency)}</strong>
+                    <p>Target 6 months of core expenses before increasing risk.</p>
+                  </div>
+                  <div className="insight-card">
+                    <span>Index fund SIP</span>
+                    <strong>{formatMoney(salarySplit.indexFund)}</strong>
+                    <p>Primary long-term wealth builder with disciplined monthly investing.</p>
+                  </div>
+                  <div className="insight-card">
+                    <span>Debt allocation</span>
+                    <strong>{formatMoney(salarySplit.debtFund)}</strong>
+                    <p>Add stability through debt funds or fixed-income instruments.</p>
+                  </div>
+                  <div className="insight-card">
+                    <span>Liquid reserve</span>
+                    <strong>{formatMoney(salarySplit.liquid)}</strong>
+                    <p>Keep this portion accessible for near-term goals or sudden needs.</p>
+                  </div>
                 </div>
-                <div className="suggestion-item">
-                  <strong>Keep deposits flowing into pots</strong>
-                  <p>Small automated transfers are the easiest way to maintain progress on savings goals.</p>
+
+                <div className="salary-history-panel" aria-label="Saved salary plans">
+                  <h3>Saved monthly plans</h3>
+                  {salaryPlans.length === 0 ? (
+                    <p className="text-link">No plans saved yet. Save your first month to build history.</p>
+                  ) : (
+                    <div className="salary-history-list">
+                      {salaryPlans.map((plan) => (
+                        <article key={`${plan.monthKey}-${plan.id}`} className="salary-history-item">
+                          <div>
+                            <strong>{formatMonthLabel(plan.monthKey)}</strong>
+                            <span className="status-chip">{investmentPresets[plan.investmentStyle].label}</span>
+                          </div>
+                          <p>
+                            Salary {formatMoney(plan.salary)} · Spent {formatMoney(plan.spent)} · Remaining {formatMoney(plan.remaining)}
+                          </p>
+                          <p>
+                            Emergency {formatMoney(plan.emergency)} · Index {formatMoney(plan.indexFund)} · Debt {formatMoney(plan.debtFund)} · Liquid {formatMoney(plan.liquid)}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="suggestion-item">
-                  <strong>Review bills before due dates</strong>
-                  <p>{budgetAlerts.length ? 'Budget alerts and bill reminders should be checked together at the start of each week.' : 'Bills are under control, so a weekly check-in is enough.'}</p>
+
+                <div className="sip-calculator" aria-label="SIP calculator">
+                  <div className="sip-calculator-head">
+                    <div>
+                      <p className="section-kicker">SIP calculator</p>
+                      <h3>12% annual growth estimate</h3>
+                    </div>
+                    <span className="text-link">Simple estimate for monthly SIP growth</span>
+                  </div>
+
+                  <div className="sip-calculator-grid">
+                    <label>
+                      <span>Monthly SIP</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={sipMonthlyAmount}
+                        onChange={(event) => setSipMonthlyAmount(event.target.value)}
+                        placeholder="5000"
+                      />
+                    </label>
+                    <label>
+                      <span>Years</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={sipYears}
+                        onChange={(event) => setSipYears(event.target.value)}
+                        placeholder="1"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="sip-calculator-results">
+                    <div>
+                      <dt>Total invested</dt>
+                      <dd>{formatMoney(sipInvestedAmount)}</dd>
+                    </div>
+                    <div>
+                      <dt>Estimated gain</dt>
+                      <dd className={sipEstimatedGain > 0 ? 'money-positive' : ''}>{formatMoney(sipEstimatedGain)}</dd>
+                    </div>
+                    <div>
+                      <dt>Estimated maturity</dt>
+                      <dd>{formatMoney(sipEstimatedMaturity)}</dd>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </article>
+              </article>
+            </div>
           </section>
 
           <section id="bills" className="table-section" aria-labelledby="bills-title">

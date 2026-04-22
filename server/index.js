@@ -19,6 +19,12 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const distPath = path.resolve(__dirname, '../dist')
 
+const investmentPresets = {
+  conservative: { emergency: 40, indexFund: 25, debtFund: 25, liquid: 10 },
+  balanced: { emergency: 30, indexFund: 45, debtFund: 15, liquid: 10 },
+  growth: { emergency: 20, indexFund: 60, debtFund: 10, liquid: 10 },
+}
+
 app.use(helmet())
 app.use(cors())
 app.use(express.json())
@@ -49,6 +55,29 @@ function authenticate(req, res, next) {
     next()
   } catch {
     res.status(401).json({ message: 'Invalid or expired token.' })
+  }
+}
+
+function computeSalaryPlan({ salary, spent, style }) {
+  const safeSalary = Math.max(0, Number(salary) || 0)
+  const safeSpent = Math.max(0, Number(spent) || 0)
+  const remaining = Math.max(0, safeSalary - safeSpent)
+  const split = investmentPresets[style] ?? investmentPresets.balanced
+
+  const emergency = Math.round((remaining * split.emergency) / 100)
+  const indexFund = Math.round((remaining * split.indexFund) / 100)
+  const debtFund = Math.round((remaining * split.debtFund) / 100)
+  const liquid = remaining - (emergency + indexFund + debtFund)
+
+  return {
+    salary: safeSalary,
+    spent: safeSpent,
+    remaining,
+    style,
+    emergency,
+    indexFund,
+    debtFund,
+    liquid,
   }
 }
 
@@ -151,7 +180,159 @@ app.get('/api/dashboard', authenticate, async (req, res) => {
     userId,
   )
 
-  res.json({ transactions, budgets, pots, bills })
+  const salaryPlans = await db.all(
+    `SELECT
+      id,
+      month_key as monthKey,
+      salary,
+      spent,
+      remaining,
+      investment_style as investmentStyle,
+      emergency,
+      index_fund as indexFund,
+      debt_fund as debtFund,
+      liquid,
+      created_at as createdAt
+    FROM salary_plans
+    WHERE user_id = ?
+    ORDER BY month_key DESC, id DESC
+    LIMIT 12`,
+    userId,
+  )
+
+  res.json({ transactions, budgets, pots, bills, salaryPlans })
+})
+
+app.get('/api/salary-plans', authenticate, async (req, res) => {
+  const db = await getDb()
+  const userId = req.user.id
+  const limitValue = Number(req.query.limit)
+  const limit = Number.isInteger(limitValue) && limitValue > 0 ? Math.min(limitValue, 36) : 12
+
+  const salaryPlans = await db.all(
+    `SELECT
+      id,
+      month_key as monthKey,
+      salary,
+      spent,
+      remaining,
+      investment_style as investmentStyle,
+      emergency,
+      index_fund as indexFund,
+      debt_fund as debtFund,
+      liquid,
+      created_at as createdAt
+    FROM salary_plans
+    WHERE user_id = ?
+    ORDER BY month_key DESC, id DESC
+    LIMIT ?`,
+    userId,
+    limit,
+  )
+
+  res.json({ salaryPlans })
+})
+
+app.post('/api/salary-plans', authenticate, async (req, res) => {
+  const { monthKey, salary, spent, investmentStyle = 'balanced' } = req.body ?? {}
+  const style = String(investmentStyle)
+  const month = String(monthKey ?? '').trim()
+
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ message: 'monthKey must be in YYYY-MM format.' })
+    return
+  }
+
+  if (!Object.hasOwn(investmentPresets, style)) {
+    res.status(400).json({ message: 'Invalid investment style.' })
+    return
+  }
+
+  if (typeof salary !== 'number' || Number.isNaN(salary) || salary < 0) {
+    res.status(400).json({ message: 'Salary must be a valid non-negative number.' })
+    return
+  }
+
+  if (typeof spent !== 'number' || Number.isNaN(spent) || spent < 0) {
+    res.status(400).json({ message: 'Spent amount must be a valid non-negative number.' })
+    return
+  }
+
+  const plan = computeSalaryPlan({ salary, spent, style })
+
+  const db = await getDb()
+  const userId = req.user.id
+
+  await db.run(
+    `INSERT INTO salary_plans (
+      user_id,
+      month_key,
+      salary,
+      spent,
+      remaining,
+      investment_style,
+      emergency,
+      index_fund,
+      debt_fund,
+      liquid
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, month_key)
+    DO UPDATE SET
+      salary = excluded.salary,
+      spent = excluded.spent,
+      remaining = excluded.remaining,
+      investment_style = excluded.investment_style,
+      emergency = excluded.emergency,
+      index_fund = excluded.index_fund,
+      debt_fund = excluded.debt_fund,
+      liquid = excluded.liquid,
+      created_at = CURRENT_TIMESTAMP`,
+    userId,
+    month,
+    plan.salary,
+    plan.spent,
+    plan.remaining,
+    plan.style,
+    plan.emergency,
+    plan.indexFund,
+    plan.debtFund,
+    plan.liquid,
+  )
+
+  const salaryPlans = await db.all(
+    `SELECT
+      id,
+      month_key as monthKey,
+      salary,
+      spent,
+      remaining,
+      investment_style as investmentStyle,
+      emergency,
+      index_fund as indexFund,
+      debt_fund as debtFund,
+      liquid,
+      created_at as createdAt
+    FROM salary_plans
+    WHERE user_id = ?
+    ORDER BY month_key DESC, id DESC
+    LIMIT 12`,
+    userId,
+  )
+
+  res.status(201).json({
+    salaryPlans,
+    savedPlan: {
+      monthKey: month,
+      salary: plan.salary,
+      spent: plan.spent,
+      remaining: plan.remaining,
+      investmentStyle: plan.style,
+      emergency: plan.emergency,
+      indexFund: plan.indexFund,
+      debtFund: plan.debtFund,
+      liquid: plan.liquid,
+    },
+  })
 })
 
 app.post('/api/transactions', authenticate, async (req, res) => {
@@ -270,6 +451,101 @@ app.post('/api/pots/:name/move', authenticate, async (req, res) => {
 
   const pots = await db.all('SELECT name, saved, goal, cadence FROM pots WHERE user_id = ? ORDER BY name ASC', userId)
 
+  res.json({ pots })
+})
+
+app.post('/api/pots', authenticate, async (req, res) => {
+  const { name, goal, saved = 0, cadence = 'Monthly auto-transfer' } = req.body ?? {}
+
+  const trimmedName = String(name ?? '').trim()
+  const goalValue = Number(goal)
+  const savedValue = Number(saved)
+  const cadenceValue = String(cadence ?? '').trim() || 'Monthly auto-transfer'
+
+  if (!trimmedName || !Number.isFinite(goalValue) || goalValue <= 0 || !Number.isFinite(savedValue) || savedValue < 0) {
+    res.status(400).json({ message: 'Name, goal (> 0), and saved (>= 0) are required.' })
+    return
+  }
+
+  const db = await getDb()
+  const userId = req.user.id
+
+  try {
+    await db.run(
+      'INSERT INTO pots (user_id, name, saved, goal, cadence) VALUES (?, ?, ?, ?, ?)',
+      userId,
+      trimmedName,
+      Math.min(savedValue, goalValue),
+      goalValue,
+      cadenceValue,
+    )
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+      res.status(409).json({ message: 'A saving pot with this name already exists.' })
+      return
+    }
+
+    throw error
+  }
+
+  const pots = await db.all('SELECT name, saved, goal, cadence FROM pots WHERE user_id = ? ORDER BY name ASC', userId)
+  res.status(201).json({ pots })
+})
+
+app.put('/api/pots/:name', authenticate, async (req, res) => {
+  const { name } = req.params
+  const { newName, goal, saved, cadence } = req.body ?? {}
+
+  const originalName = String(name ?? '').trim()
+  const updatedName = String(newName ?? '').trim()
+  const goalValue = Number(goal)
+  const savedValue = Number(saved)
+  const cadenceValue = String(cadence ?? '').trim() || 'Monthly auto-transfer'
+
+  if (
+    !originalName ||
+    !updatedName ||
+    !Number.isFinite(goalValue) ||
+    goalValue <= 0 ||
+    !Number.isFinite(savedValue) ||
+    savedValue < 0
+  ) {
+    res.status(400).json({ message: 'newName, goal (> 0), and saved (>= 0) are required.' })
+    return
+  }
+
+  const db = await getDb()
+  const userId = req.user.id
+  const existingPot = await db.get(
+    'SELECT id FROM pots WHERE user_id = ? AND lower(name) = lower(?)',
+    userId,
+    originalName,
+  )
+
+  if (!existingPot) {
+    res.status(404).json({ message: 'Pot not found.' })
+    return
+  }
+
+  try {
+    await db.run(
+      'UPDATE pots SET name = ?, goal = ?, saved = ?, cadence = ? WHERE id = ?',
+      updatedName,
+      goalValue,
+      Math.min(savedValue, goalValue),
+      cadenceValue,
+      existingPot.id,
+    )
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+      res.status(409).json({ message: 'A saving pot with this name already exists.' })
+      return
+    }
+
+    throw error
+  }
+
+  const pots = await db.all('SELECT name, saved, goal, cadence FROM pots WHERE user_id = ? ORDER BY name ASC', userId)
   res.json({ pots })
 })
 

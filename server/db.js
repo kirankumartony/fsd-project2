@@ -66,6 +66,23 @@ export async function getDb() {
       amount REAL NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS salary_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      month_key TEXT NOT NULL,
+      salary REAL NOT NULL,
+      spent REAL NOT NULL,
+      remaining REAL NOT NULL,
+      investment_style TEXT NOT NULL,
+      emergency REAL NOT NULL,
+      index_fund REAL NOT NULL,
+      debt_fund REAL NOT NULL,
+      liquid REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, month_key)
+    );
   `)
 
   return database

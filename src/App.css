@@ -594,7 +594,7 @@ table tr:focus-visible {
 
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 16px;
 }
@@ -747,6 +747,188 @@ tbody tr:focus-visible {
   gap: 12px;
 }
 
+.salary-plan-card {
+  display: grid;
+  gap: 12px;
+}
+
+.salary-plan-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.salary-plan-calculation,
+.salary-plan-recommendations {
+  height: 100%;
+  min-width: 0;
+}
+
+.salary-plan-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.salary-plan-controls label {
+  display: grid;
+  gap: 8px;
+  color: rgba(246, 239, 227, 0.72);
+  font-size: 0.92rem;
+}
+
+.salary-plan-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.salary-plan-note {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(246, 239, 227, 0.82);
+}
+
+.salary-plan-note p {
+  margin: 0;
+}
+
+.salary-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.salary-summary-grid div {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.salary-summary-grid dt {
+  color: rgba(246, 239, 227, 0.7);
+}
+
+.salary-summary-grid dd {
+  margin: 6px 0 0;
+  font-size: 1.35rem;
+  color: #fff7ef;
+}
+
+.salary-split-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.salary-history-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.salary-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.salary-history-item {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.salary-history-item div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.salary-history-item p {
+  color: rgba(246, 239, 227, 0.76);
+}
+
+.sip-calculator {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+}
+
+.sip-calculator-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.sip-calculator-head h3 {
+  margin-top: 4px;
+  color: #fff7ef;
+  font-size: 1.05rem;
+}
+
+.sip-calculator-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sip-calculator-grid label {
+  display: grid;
+  gap: 8px;
+  color: rgba(246, 239, 227, 0.72);
+  font-size: 0.92rem;
+}
+
+.sip-calculator-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.sip-calculator-results div {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
+}
+
+.sip-calculator-results dt {
+  color: rgba(246, 239, 227, 0.7);
+  font-size: 0.88rem;
+}
+
+.sip-calculator-results dd {
+  margin: 6px 0 0;
+  font-size: clamp(1rem, 2.2vw, 1.15rem);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: #fff7ef;
+}
+
+@media (min-width: 1500px) {
+  .salary-plan-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
 .alert-panel {
   margin-top: 4px;
   display: grid;
@@ -772,6 +954,19 @@ tbody tr:focus-visible {
 .progress-item {
   display: grid;
   gap: 10px;
+}
+
+.pot-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pot-edit-grid label {
+  display: grid;
+  gap: 6px;
+  color: rgba(246, 239, 227, 0.72);
+  font-size: 0.88rem;
 }
 
 .progress-labels {
@@ -874,7 +1069,17 @@ blockquote {
   .architecture-grid,
   .footer-card,
   .control-grid,
-  .expense-grid {
+  .expense-grid,
+  .salary-plan-controls,
+  .salary-summary-grid,
+  .salary-split-grid,
+  .pot-edit-grid,
+  .sip-calculator-grid,
+  .sip-calculator-results {
+    grid-template-columns: 1fr;
+  }
+
+  .salary-plan-layout {
     grid-template-columns: 1fr;
   }
 
@@ -932,8 +1137,31 @@ blockquote {
   .chip-row,
   .hero-actions,
   .pot-actions,
-  .expense-form-head {
+  .expense-form-head,
+  .salary-plan-actions {
     width: 100%;
+  }
+
+  .salary-plan-actions .button,
+  .salary-plan-actions .text-link {
+    width: 100%;
+  }
+
+  .salary-plan-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .salary-split-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sip-calculator-head {
+    flex-direction: column;
+  }
+
+  .salary-plan-note {
+    padding: 12px 14px;
   }
 
   .comparison-details {
