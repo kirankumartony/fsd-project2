@@ -144,6 +144,14 @@ function formatMoney(amount: number) {
   return currency.format(amount)
 }
 
+function isIncomeTransaction(transaction: Transaction) {
+  return transaction.type === 'Income' || transaction.amount > 0
+}
+
+function isExpenseTransaction(transaction: Transaction) {
+  return transaction.type === 'Expense' || transaction.amount < 0
+}
+
 function normalizeDateToIso(dateValue: string) {
   const value = String(dateValue ?? '').trim()
   if (!value) {
@@ -333,7 +341,7 @@ function App() {
   const expenseMonths = useMemo(() => {
     const uniqueMonths = new Set(
       transactions
-        .filter((transaction) => transaction.type === 'Expense')
+        .filter(isExpenseTransaction)
         .map((transaction) => getMonthKeyFromDate(transaction.date))
         .filter(Boolean),
     )
@@ -348,7 +356,7 @@ function App() {
       .filter((transaction) => {
         const transactionMonth = getMonthKeyFromDate(transaction.date)
         const matchesCategory = category === 'All' || transaction.category === category
-        const matchesMonth = monthFilter === 'all' || (transaction.type === 'Expense' && transactionMonth === monthFilter)
+        const matchesMonth = monthFilter === 'all' || (isExpenseTransaction(transaction) && transactionMonth === monthFilter)
         const matchesSearch =
           !query ||
           transaction.merchant.toLowerCase().includes(query) ||
@@ -371,11 +379,11 @@ function App() {
   const lastVisibleIndex = Math.min(currentPage * rowsPerPage, filteredTransactions.length)
 
   const totalIncome = transactions
-    .filter((transaction) => transaction.type === 'Income')
-    .reduce((sum, transaction) => sum + transaction.amount, 0)
+    .filter(isIncomeTransaction)
+    .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0)
   const totalExpense = Math.abs(
     transactions
-      .filter((transaction) => transaction.type === 'Expense')
+      .filter(isExpenseTransaction)
       .reduce((sum, transaction) => sum + transaction.amount, 0),
   )
   const netCashFlow = totalIncome - totalExpense
@@ -388,7 +396,7 @@ function App() {
     () =>
       transactions
         .filter(
-          (transaction) => transaction.type === 'Expense' && getMonthKeyFromDate(transaction.date) === summaryMonth,
+          (transaction) => isExpenseTransaction(transaction) && getMonthKeyFromDate(transaction.date) === summaryMonth,
         )
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     [summaryMonth, transactions],
@@ -398,7 +406,7 @@ function App() {
     () =>
       transactions
         .filter(
-          (transaction) => transaction.type === 'Expense' && getMonthKeyFromDate(transaction.date) === comparisonMonth,
+          (transaction) => isExpenseTransaction(transaction) && getMonthKeyFromDate(transaction.date) === comparisonMonth,
         )
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     [comparisonMonth, transactions],
@@ -408,7 +416,7 @@ function App() {
       transactions
         .filter(
           (transaction) =>
-            transaction.type === 'Expense' && getMonthKeyFromDate(transaction.date) === previousComparisonMonth,
+            isExpenseTransaction(transaction) && getMonthKeyFromDate(transaction.date) === previousComparisonMonth,
         )
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     [previousComparisonMonth, transactions],
@@ -421,16 +429,16 @@ function App() {
     () =>
       transactions
         .filter(
-          (transaction) => transaction.type === 'Income' && getMonthKeyFromDate(transaction.date) === salaryPlanMonth,
+          (transaction) => isIncomeTransaction(transaction) && getMonthKeyFromDate(transaction.date) === salaryPlanMonth,
         )
-        .reduce((sum, transaction) => sum + transaction.amount, 0),
+        .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     [salaryPlanMonth, transactions],
   )
   const salaryMonthExpenseTotal = useMemo(
     () =>
       transactions
         .filter(
-          (transaction) => transaction.type === 'Expense' && getMonthKeyFromDate(transaction.date) === salaryPlanMonth,
+          (transaction) => isExpenseTransaction(transaction) && getMonthKeyFromDate(transaction.date) === salaryPlanMonth,
         )
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     [salaryPlanMonth, transactions],
@@ -1064,6 +1072,32 @@ function App() {
 
     setBills((currentBills) => currentBills.filter((bill) => bill.id !== billId))
     queueUndo({ kind: 'bill', bill: removedBill, message: `Bill "${removedBill.name}" removed.` })
+  }
+
+  const markBillPaid = async (billId: number) => {
+    const targetBill = bills.find((bill) => bill.id === billId)
+    if (!targetBill || targetBill.status === 'Paid') return
+
+    try {
+      const data = await apiRequest(
+        `/api/bills/${billId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'Paid' }),
+        },
+        token,
+      )
+
+      setBills(data.bills ?? bills.map((bill) => (bill.id === billId ? { ...bill, status: 'Paid' } : bill)))
+      setApiConnected(true)
+      return
+    } catch {
+      setApiConnected(false)
+    }
+
+    setBills((currentBills) =>
+      currentBills.map((bill) => (bill.id === billId ? { ...bill, status: 'Paid' } : bill)),
+    )
   }
 
   const removeTransaction = async (transactionId: number) => {
@@ -1926,6 +1960,15 @@ function App() {
                       <td><span className={`status-chip status-${bill.status.toLowerCase()}`}>{bill.status}</span></td>
                       <td className="align-right">{formatMoney(bill.amount)}</td>
                       <td className="align-right">
+                        {bill.status !== 'Paid' && (
+                          <button
+                            type="button"
+                            className="button button-secondary table-action-button"
+                            onClick={() => markBillPaid(bill.id)}
+                          >
+                            Mark paid
+                          </button>
+                        )}
                         <button type="button" className="button button-secondary" onClick={() => removeBill(bill.id)}>
                           Remove
                         </button>

@@ -638,6 +638,34 @@ app.delete('/api/bills/:id', authenticate, async (req, res) => {
   res.json({ bills })
 })
 
+app.patch('/api/bills/:id', authenticate, async (req, res) => {
+  const billId = Number(req.params.id)
+  const { status } = req.body ?? {}
+
+  if (!Number.isInteger(billId) || billId <= 0) {
+    res.status(400).json({ message: 'Invalid bill id.' })
+    return
+  }
+
+  const allowedStatus = new Set(['Paid', 'Upcoming', 'Scheduled'])
+  if (!allowedStatus.has(status)) {
+    res.status(400).json({ message: 'Invalid bill status.' })
+    return
+  }
+
+  const db = await getDb()
+  const userId = req.user.id
+
+  await db.run('UPDATE bills SET status = ? WHERE id = ? AND user_id = ?', status, billId, userId)
+
+  const bills = await db.all(
+    'SELECT id, name, due, status, amount FROM bills WHERE user_id = ? ORDER BY id ASC',
+    userId,
+  )
+
+  res.json({ bills })
+})
+
 app.delete('/api/bills/paid', authenticate, async (req, res) => {
   const db = await getDb()
   const userId = req.user.id
