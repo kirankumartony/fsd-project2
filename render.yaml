@@ -2,7 +2,7 @@ services:
   - type: web
     name: fsd-project2-api
     runtime: node
-    plan: free
+    autoDeployTrigger: commit
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
