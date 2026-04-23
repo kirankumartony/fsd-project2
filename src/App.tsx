@@ -470,6 +470,10 @@ function App() {
     }
   }, [investmentStyle, remainingSalary])
   const dueBillNotifications = useMemo(() => {
+    if (!token || !user) {
+      return []
+    }
+
     const today = new Date()
 
     return bills
@@ -480,7 +484,7 @@ function App() {
       }))
       .filter((entry) => entry.dueOffset === 0 || entry.dueOffset === 1)
       .sort((left, right) => Number(left.dueOffset) - Number(right.dueOffset))
-  }, [bills])
+  }, [bills, token, user])
 
   const apiRequest = async (path: string, options: RequestInit = {}, authToken?: string) => {
     const response = await fetch(path, {
@@ -579,35 +583,8 @@ function App() {
     let mounted = true
 
     const load = async () => {
-      const savedToken = localStorage.getItem('finance_token')
-      if (!savedToken) {
-        if (mounted) setAuthReady(true)
-        return
-      }
-
-      try {
-        const me = await apiRequest('/api/auth/me', {}, savedToken)
-        const data = await apiRequest('/api/dashboard', {}, savedToken)
-        if (!mounted) return
-
-        setToken(savedToken)
-        setUser(me.user)
-        setTransactions(data.transactions ?? initialTransactions)
-        setBudgets(data.budgets ?? initialBudgets)
-        setPots(data.pots ?? initialPots)
-        setBills(data.bills ?? initialBills)
-        setSalaryPlans(data.salaryPlans ?? [])
-        setApiConnected(true)
-      } catch {
-        if (mounted) {
-          localStorage.removeItem('finance_token')
-          setToken('')
-          setUser(null)
-          setApiConnected(false)
-        }
-      } finally {
-        if (mounted) setAuthReady(true)
-      }
+      localStorage.removeItem('finance_token')
+      if (mounted) setAuthReady(true)
     }
 
     load()
@@ -621,6 +598,10 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!token || !user) {
+      return
+    }
+
     if (typeof window === 'undefined' || !('Notification' in window)) {
       return
     }
@@ -641,7 +622,7 @@ function App() {
         body: `${bill.name} is due ${when} (${bill.due}) for ${formatMoney(bill.amount)}.`,
       })
     })
-  }, [dueBillNotifications, notificationPermission])
+  }, [dueBillNotifications, notificationPermission, token, user])
 
   const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -656,7 +637,6 @@ function App() {
         body: JSON.stringify(payload),
       })
 
-      localStorage.setItem('finance_token', auth.token)
       setToken(auth.token)
       setUser(auth.user)
 
@@ -676,7 +656,6 @@ function App() {
   }
 
   const logout = () => {
-    localStorage.removeItem('finance_token')
     setToken('')
     setUser(null)
     setApiConnected(false)
