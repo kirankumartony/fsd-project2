@@ -443,7 +443,6 @@ function App() {
         .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     [salaryPlanMonth, transactions],
   )
-  const salaryMonthRemaining = salaryMonthIncomeTotal - salaryMonthExpenseTotal
   const salaryValue = Math.max(0, Number(salaryAmount) || 0)
   const spentValue = Math.max(0, Number(spentAmount) || 0)
   const savedThisMonthValue = Math.max(0, Number(monthlySavedAmount) || 0)
@@ -1736,14 +1735,6 @@ function App() {
                   </button>
                 </div>
 
-                <div className="salary-plan-note">
-                  <p>
-                    Tracked for {formatMonthLabel(salaryPlanMonth)}: Income {formatMoney(salaryMonthIncomeTotal)} · Expenses {formatMoney(salaryMonthExpenseTotal)} · Remaining {formatMoney(salaryMonthRemaining)}
-                  </p>
-                  <p>
-                    Saved this month: {formatMoney(savedThisMonthValue)} · Remaining after goals: {formatMoney(remainingAfterGoals)}
-                  </p>
-                </div>
                 {salaryPlanMessage && <span className="auth-message">{salaryPlanMessage}</span>}
 
                 <div className="salary-summary-grid" aria-label="Salary summary">
