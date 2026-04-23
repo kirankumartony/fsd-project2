@@ -323,6 +323,7 @@ function App() {
   const [authMessage, setAuthMessage] = useState('')
   const [, setApiConnected] = useState(false)
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null)
+  const [dashboardUserId, setDashboardUserId] = useState<number | null>(null)
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
       return 'denied'
@@ -477,7 +478,7 @@ function App() {
     }
   }, [investmentStyle, remainingSalary])
   const dueBillNotifications = useMemo(() => {
-    if (!token || !user) {
+    if (!token || !user || dashboardUserId !== user.id) {
       return []
     }
 
@@ -491,7 +492,7 @@ function App() {
       }))
       .filter((entry) => entry.dueOffset === 0 || entry.dueOffset === 1)
       .sort((left, right) => Number(left.dueOffset) - Number(right.dueOffset))
-  }, [bills, token, user])
+  }, [bills, dashboardUserId, token, user])
 
   const apiRequest = async (path: string, options: RequestInit = {}, authToken?: string) => {
     const response = await fetch(path, {
@@ -604,6 +605,16 @@ function App() {
     }
   }, [])
 
+  const clearUserScopedState = () => {
+    setTransactions([])
+    setBudgets([])
+    setPots([])
+    setBills([])
+    setSalaryPlans([])
+    setDashboardUserId(null)
+    sentNotificationKeysRef.current.clear()
+  }
+
   useEffect(() => {
     if (!token || !user) {
       return
@@ -646,6 +657,7 @@ function App() {
 
       setToken(auth.token)
       setUser(auth.user)
+      clearUserScopedState()
 
       const data = await apiRequest('/api/dashboard', {}, auth.token)
       setTransactions(data.transactions ?? initialTransactions)
@@ -653,6 +665,7 @@ function App() {
       setPots(data.pots ?? initialPots)
       setBills(data.bills ?? initialBills)
       setSalaryPlans(data.salaryPlans ?? [])
+      setDashboardUserId(auth.user.id)
       setApiConnected(true)
       setPassword('')
       setAuthMessage('Authenticated successfully.')
@@ -666,10 +679,7 @@ function App() {
     setToken('')
     setUser(null)
     setApiConnected(false)
-    setTransactions(initialTransactions)
-    setBudgets(initialBudgets)
-    setPots(initialPots)
-    setBills(initialBills)
+    clearUserScopedState()
     setSalaryPlans([])
     setSalaryPlanMessage('')
     setAuthMessage('Logged out.')
